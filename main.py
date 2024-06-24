@@ -5,7 +5,7 @@ import sys
 pygame.init()
 
 # Set up the display
-width, height = 400, 400
+width, height = 512, 512
 screen = pygame.display.set_mode((width, height))
 pygame.display.set_caption("Expanding Square Animation")
 
