@@ -1,66 +1,97 @@
-import pygame
-import sys
+from PIL import Image, ImageDraw, ImageFont
 import numpy as np
 from moviepy.editor import VideoClip
-from moviepy.video.io.bindings import mplfig_to_npimage
+import os
 
-# Initialize Pygame
-pygame.init()
-
-# Set up the display
+# Animation settings
 width, height = 512, 512
-screen = pygame.Surface((width, height))  # Use a Surface instead of setting video mode
-
-# Colors
-BLACK = (0, 0, 0)
-WHITE = (255, 255, 255)
-
-# Animation variables
-letter_to_animate = "A"  # Change this to animate a different letter
-expansion_duration = 3  # Time in seconds for full expansion (adjustable)
+letter_to_animate = "A"
+expansion_duration = 3  # seconds
 fps = 60
+total_duration = 6  # Total duration of the animation
 
-# Pre-render the maximum size letter
-max_size = max(width, height)
-max_font = pygame.font.Font(None, max_size)
-max_letter_surface = max_font.render(letter_to_animate, True, WHITE)
+# Font selection
+def get_font(font_size):
+    font_files = [
+        "/System/Library/Fonts/Supplemental/Arial.ttf",
+        "/System/Library/Fonts/Supplemental/Tahoma.ttf",
+        "/System/Library/Fonts/Helvetica.ttc",
+        "/System/Library/Fonts/Times.ttc"
+    ]
+    
+    for font_file in font_files:
+        if os.path.exists(font_file):
+            return ImageFont.truetype(font_file, font_size)
+    
+    return ImageFont.load_default()
+
+# Create a base image with the maximum-sized letter
+font_size = min(width, height)
+font = get_font(font_size)
+image = Image.new('RGB', (width, height), color=(0, 0, 0))
+draw = ImageDraw.Draw(image)
+
+# Get the size of the letter
+left, top, right, bottom = font.getbbox(letter_to_animate)
+text_width = right - left
+text_height = bottom - top
+
+# Calculate position to center the letter
+x = (width - text_width) // 2
+y = (height - text_height) // 2 - top  # Adjust for the font's baseline
+
+# Draw the letter
+draw.text((x, y), letter_to_animate, font=font, fill=(255, 255, 255))
+
+# Convert to numpy array
+letter_array = np.array(image)
 
 class ExpandingLetter:
-    def __init__(self, letter):
-        self.progress = 0
-        self.letter = letter
+    def __init__(self, start_time):
+        self.start_time = start_time
 
-    def update(self, progress):
-        self.progress = progress
+    def get_size(self, t):
+        elapsed = t - self.start_time
+        progress = min(1, elapsed / expansion_duration)
+        return int(min(width, height) * progress)
 
-    def draw(self, surface):
-        size = int(max_size * self.progress)
-        if size > 0:
-            letter_surface = pygame.transform.smoothscale(max_letter_surface, (size, size))
-            letter_rect = letter_surface.get_rect(center=(width // 2, height // 2))
-            surface.blit(letter_surface, letter_rect)
-
-# Function to create each frame
 def make_frame(t):
-    progress = (t % expansion_duration) / expansion_duration
+    frame = Image.new('RGB', (width, height), color=(0, 0, 0))
+    frame_array = np.array(frame)
     
-    screen.fill(BLACK)
-    letter.update(progress)
-    letter.draw(screen)
+    # Determine which letters should be visible
+    visible_letters = [letter for letter in letters if letter.start_time <= t]
     
-    return pygame.surfarray.array3d(screen).swapaxes(0, 1)
+    for letter in visible_letters:
+        size = letter.get_size(t)
+        if size > 0:
+            resized = Image.fromarray(letter_array).resize((size, size), Image.LANCZOS)
+            resized_array = np.array(resized)
+            
+            # Calculate paste position
+            paste_x = (width - size) // 2
+            paste_y = (height - size) // 2
+            
+            # Blend the resized letter with the frame
+            frame_array[paste_y:paste_y+size, paste_x:paste_x+size] = np.maximum(
+                frame_array[paste_y:paste_y+size, paste_x:paste_x+size],
+                resized_array
+            )
+    
+    return frame_array
 
-# Create the expanding letter object
-letter = ExpandingLetter(letter_to_animate)
+# Create list of letters with staggered start times
+letters = [ExpandingLetter(0)]  # First letter starts immediately
+start_time = expansion_duration / 2  # Start time for the second letter
+while start_time < total_duration:
+    letters.append(ExpandingLetter(start_time))
+    start_time += expansion_duration / 2
 
 # Create the video clip
-animation = VideoClip(make_frame, duration=expansion_duration)
+animation = VideoClip(make_frame, duration=total_duration)
 
 # Write the video file
-video_filename = f'expanding_letter_{letter_to_animate}.mp4'
+video_filename = f'overlapping_expanding_letters_{letter_to_animate}.mp4'
 animation.write_videofile(video_filename, fps=fps)
 
 print(f"Video saved as '{video_filename}'")
-
-# Quit Pygame
-pygame.quit()
